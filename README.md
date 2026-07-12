@@ -1,34 +1,141 @@
 # 360doegaku
 
-A minimal Electron application with TypeScript
+360doegaku は、球体空間の内側をキャンバスとして、
+**360度画像を自分の手で描いて制作するためのデスクトップアプリケーション**です。
 
-## Recommended IDE Setup
+既存画像の加工を主目的とするのではなく、白紙の360度空間に直接描画し、没入型の絵画作品を作成できるアプリを目指しています。
 
-- [VSCode](https://code.visualstudio.com/) + [ESLint](https://marketplace.visualstudio.com/items?itemName=dbaeumer.vscode-eslint) + [Prettier](https://marketplace.visualstudio.com/items?itemName=esbenp.prettier-vscode)
+## コンセプト
 
-## Project Setup
+**360度空間を、自由に描く。**
 
-### Install
+平面のキャンバスではなく、ユーザーが球体空間の中に入り、周囲を見回しながら絵を描ける制作環境を構築します。
+
+方向性としては、360度空間専用のAdobe Frescoに近い描画体験を中心とし、将来的にはPhotoshopの画像編集機能やIllustratorのベクター編集機能も取り入れる予定です。
+
+## 現在の開発状況
+
+現在は、描画基盤を構築しています。
+
+完了済み：
+
+* Electron + TypeScriptの開発環境構築
+* Three.jsの導入
+* Three.jsによる回転する球体の表示
+* GitおよびGitHubによるバージョン管理
+
+次の開発段階：
+
+* 球体の内側表示
+* 360度カメラ
+* マウスによる視点操作
+
+## 主な開発予定機能
+
+* 360度球体キャンバスへのブラシ描画
+* 消しゴム
+* 筆圧対応
+* レイヤー機能
+* 図形ツール
+* ベジェ曲線
+* 文字ツール
+* PNG書き出し
+* SVG書き出し
+* 独自プロジェクト形式での保存
+* 360度空間内での再編集
+* GPUによる高速描画
+* Rustによる画像処理と並列処理
+
+## 使用技術
+
+* Electron
+* TypeScript
+* Three.js
+* WebGL
+* WebGPU（導入予定）
+* Rust（導入予定）
+* Git
+* GitHub
+
+## 推奨開発環境
+
+* Visual Studio Code
+* Node.js 22 LTS
+* npm
+* Git
+
+推奨するVisual Studio Code拡張機能：
+
+* ESLint
+* Prettier
+
+## プロジェクトのセットアップ
+
+リポジトリを取得した後、プロジェクトフォルダで次のコマンドを実行します。
+
+### 依存パッケージのインストール
 
 ```bash
-$ npm install
+npm install
 ```
 
-### Development
+### 開発版の起動
 
 ```bash
-$ npm run dev
+npm run dev
 ```
 
-### Build
+## ビルド
+
+### Windows
 
 ```bash
-# For windows
-$ npm run build:win
-
-# For macOS
-$ npm run build:mac
-
-# For Linux
-$ npm run build:linux
+npm run build:win
 ```
+
+### macOS
+
+```bash
+npm run build:mac
+```
+
+### Linux
+
+```bash
+npm run build:linux
+```
+
+## ドキュメント
+
+* [プロジェクト方針](PROJECT.md)
+* [開発ロードマップ](ROADMAP.md)
+* [システム構成](ARCHITECTURE.md)
+* [開発ビジョン](docs/vision.md)
+
+## 開発方針
+
+本プロジェクトでは、一度に一つの機能だけを実装し、次の流れで開発を進めます。
+
+```text
+設計
+↓
+実装
+↓
+動作確認
+↓
+レビュー
+↓
+Gitコミット
+↓
+GitHubへ同期
+↓
+次のフェーズ
+```
+
+巨大な360度画像を毎フレーム全面更新せず、更新された領域だけを描画する設計を採用します。
+
+リアルタイム表示にはGPUを使用し、画像処理・保存・並列処理にはRustの導入を予定しています。
+
+## ライセンス
+
+ライセンスおよび著作権表記は、正式公開までに決定します。
