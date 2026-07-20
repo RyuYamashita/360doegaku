@@ -12,16 +12,64 @@
  * 4. レンダラーのCanvasを画面（#app要素）へ追加する
  * 5. 球体を作成してシーンへ追加する
  * 6. 光源をシーンへ追加する
- * 7. アニメーションループを開始し、毎フレーム描画する
- * 8. ウィンドウサイズが変わったときの処理を登録する
+ * 7. OrbitControls（視点操作）を作成する
+ * 8. アニメーションループを開始し、毎フレーム描画する
+ * 9. ウィンドウサイズが変わったときの処理を登録する
  */
 
 import './style.css'
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { createScene } from './scene'
 import { createCamera } from './camera'
 import { createRenderer } from './renderer3d'
 import { createSphere } from './sphere'
 import { addLights } from './light'
+
+/**
+ * 視点操作用のOrbitControlsを作成する。
+ *
+ * 将来ブラシ描画など別の操作モードへ切り替えやすいように、
+ * OrbitControlsの生成と設定をこの関数へ独立させている
+ * （呼び出しをやめる、enableRotateなどを切り替える、といった変更がしやすくなる）。
+ *
+ * @param targetCamera 視点操作の対象となるカメラ
+ * @param domElement マウス・ホイール操作を受け取るCanvas要素
+ * @returns 設定済みのOrbitControls
+ */
+function createOrbitControls(
+  targetCamera: ReturnType<typeof createCamera>,
+  domElement: HTMLElement
+): OrbitControls {
+  const controls = new OrbitControls(targetCamera, domElement)
+
+  // カメラの位置は camera.ts の設計どおり(0, 0, 0)のまま維持したい。
+  // しかしOrbitControlsの注視点(target)がカメラと完全に同じ位置だと、
+  // カメラ〜注視点の距離が0になり、回転の向きを計算できず視点操作が働かない。
+  // そのため、camera.tsで設定した初期の向き(0, 0, -1)と同じ方向へ、
+  // ごくわずかな距離だけ離した点をtargetにする。
+  // これにより、カメラは球体の中心付近に留まったまま見回せるようになる。
+  controls.target.set(0, 0, -0.01)
+
+  // 左ドラッグで視点を回転できるようにする。
+  controls.enableRotate = true
+  // マウスホイールでズームできるようにする。
+  controls.enableZoom = true
+  // 右ドラッグによるパン移動は禁止する。
+  controls.enablePan = false
+
+  // ドラッグを離した後、視点の動きが少しだけ滑らかに収まるようにする。
+  // 値を明示することで、Three.js更新による既定値変更の影響を受けないようにする。
+  controls.enableDamping = true
+  controls.dampingFactor = 0.05
+
+  // ズームでカメラがtargetから離れすぎると、球体（半径1）の外へ出てしまい、
+  // 内側だけを描画しているBackSideの面が見えなくなってしまう。
+  // そのため、targetからの距離（見回し半径）を球体の内部に収まる範囲に制限する。
+  controls.minDistance = 0.01
+  controls.maxDistance = 0.9
+
+  return controls
+}
 
 // 描画結果（Canvas）を差し込むためのHTML要素を取得する。
 // index.htmlに用意されている id="app" の要素がこれにあたる。
@@ -50,6 +98,11 @@ scene.add(sphere)
 // 6. 光源をシーンへ追加する。
 addLights(scene)
 
+// 7. OrbitControlsを作成する。左ドラッグで視点回転、ホイールでズームができるようになる。
+const controls = createOrbitControls(camera, renderer.domElement)
+// target・minDistance・maxDistanceなどの設定を、最初のフレームより前に反映しておく。
+controls.update()
+
 /**
  * 毎フレーム呼び出される描画処理。
  * requestAnimationFrameによって、ブラウザの描画タイミングに合わせて繰り返し実行される。
@@ -60,14 +113,18 @@ function animate(): void {
 
   //sphere.rotation.y += 0.003
 
+  // enableDamping = trueにしているため、毎フレームupdate()を呼んで
+  // 視点操作（ドラッグ・ズーム）の状態をカメラへ反映する。
+  controls.update()
+
   // シーンとカメラの現在の状態をもとに、画面へ描画する。
   renderer.render(scene, camera)
 }
 
-// 7. アニメーションループを開始する。
+// 8. アニメーションループを開始する。
 animate()
 
-// 8. ウィンドウサイズが変わったときに、カメラとレンダラーのサイズを追従させる。
+// 9. ウィンドウサイズが変わったときに、カメラとレンダラーのサイズを追従させる。
 window.addEventListener('resize', () => {
   // カメラの縦横比をウィンドウの新しいサイズに合わせて更新する。
   camera.aspect = window.innerWidth / window.innerHeight
