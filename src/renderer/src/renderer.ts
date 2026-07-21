@@ -13,11 +13,13 @@
  * 5. 球体を作成してシーンへ追加する
  * 6. 光源をシーンへ追加する
  * 7. OrbitControls（視点操作）を作成する
- * 8. アニメーションループを開始し、毎フレーム描画する
- * 9. ウィンドウサイズが変わったときの処理を登録する
+ * 8. Raycaster（マウスポインターと球体の交差判定）を準備する
+ * 9. アニメーションループを開始し、毎フレーム描画する
+ * 10. ウィンドウサイズが変わったときの処理を登録する
  */
 
 import './style.css'
+import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { createScene } from './scene'
 import { createCamera } from './camera'
@@ -102,6 +104,26 @@ addLights(scene)
 const controls = createOrbitControls(camera, renderer.domElement)
 // target・minDistance・maxDistanceなどの設定を、最初のフレームより前に反映しておく。
 controls.update()
+
+// 8. Raycaster（マウスポインターが指す方向にレイを飛ばし、オブジェクトとの交差を調べる仕組み）を準備する。
+// pointermoveのたびに生成すると負荷が増えるため、Raycasterとポインター座標用のVector2は一度だけ生成し使い回す。
+const raycaster = new THREE.Raycaster()
+const pointer = new THREE.Vector2()
+// 球体とレイの交差判定結果を保持する変数。現時点では保持するだけで、描画やブラシ処理には使用しない。
+let sphereIntersections: THREE.Intersection[] = []
+
+window.addEventListener('pointermove', (event) => {
+  // マウスのピクセル座標を、Three.jsが扱うNDC（画面中心を原点とした-1〜1の正規化デバイス座標）へ変換する。
+  pointer.x = (event.clientX / window.innerWidth) * 2 - 1
+  pointer.y = -(event.clientY / window.innerHeight) * 2 + 1
+
+  // 現在のポインター位置とカメラから、球体との交差判定に使うレイを設定する。
+  raycaster.setFromCamera(pointer, camera)
+  sphereIntersections = raycaster.intersectObject(sphere)
+  // 今回は結果を保持するだけで、描画やブラシ処理にはまだ使用しない。
+  // tsconfigのnoUnusedLocalsにより未使用変数はエラーになるため、参照したことだけを示しておく。
+  void sphereIntersections
+})
 
 /**
  * 毎フレーム呼び出される描画処理。
