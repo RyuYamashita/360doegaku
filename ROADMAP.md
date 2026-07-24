@@ -1,4 +1,5 @@
 # ROADMAP.md
+
 # 360doegaku Development Roadmap
 
 Version: 0.1.0
@@ -165,3 +166,21 @@ WebGPU
 # Phase10
 
 正式版リリース
+
+## 将来の設計改善候補
+
+以下は現時点では実装しないが、今後のフェーズで検討する設計改善項目。
+
+- Pointer関連（pointer、Raycaster、Intersection、currentUvなど）を専用モジュールへ分離する。
+- currentUv は再利用する共有 Vector2 を参照しているため、値を保持したい場合は利用側で copy() または clone() を行う。
+- currentUv を実際に使用するフェーズになったら、暫定対応である `void currentUv` を削除する。
+- ブラシ描画などで pointermove の負荷が問題になった場合は、Raycast 処理を animate() 側へ移すことを検討する。
+
+## 設計レビュー記録
+
+### フェーズ2-6レビュー
+
+- Pointer関連の専用モジュール化は、UV→Canvas変換やブラシ処理の導入時に検討する。
+- currentUv は共有 Vector2 を参照するため、保持が必要な場合は利用側でコピーする。
+- currentUv の利用開始後は `void currentUv` を削除する。
+- pointermove と Raycast の処理分離は、描画負荷が問題になった段階で検討する。

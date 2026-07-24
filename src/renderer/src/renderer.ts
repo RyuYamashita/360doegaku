@@ -111,6 +111,10 @@ const raycaster = new THREE.Raycaster()
 const pointer = new THREE.Vector2()
 // 球体とレイの交差判定結果を保持する変数。現時点では保持するだけで、描画やブラシ処理には使用しない。
 let sphereIntersections: THREE.Intersection[] = []
+// 現在のUV座標をコピーして保持するためのVector2。pointermoveのたびに生成しないよう一度だけ確保し、使い回す。
+const currentUvVector = new THREE.Vector2()
+// 現在のUV座標。交差情報またはUVが取得できない場合はnull（未取得）にする。
+let currentUv: THREE.Vector2 | null = null
 
 window.addEventListener('pointermove', (event) => {
   // マウスのピクセル座標を、Three.jsが扱うNDC（画面中心を原点とした-1〜1の正規化デバイス座標）へ変換する。
@@ -120,9 +124,21 @@ window.addEventListener('pointermove', (event) => {
   // 現在のポインター位置とカメラから、球体との交差判定に使うレイを設定する。
   raycaster.setFromCamera(pointer, camera)
   sphereIntersections = raycaster.intersectObject(sphere)
-  // 今回は結果を保持するだけで、描画やブラシ処理にはまだ使用しない。
+
+  // 最も近い交差点（先頭要素）からUV座標を取得できる場合のみ、現在のUV座標として保持する。
+  const nearestUv = sphereIntersections[0]?.uv
+  if (nearestUv) {
+    // Intersection.uvをそのまま保持すると、参照経由で意図しない変更の影響を受ける可能性があるため、
+    // 使い回し用のVector2へ値だけをコピーする。
+    currentUvVector.copy(nearestUv)
+    currentUv = currentUvVector
+  } else {
+    // 交差情報がない、またはUVが取得できない場合は未取得状態に戻す。
+    currentUv = null
+  }
+  // 今回はUV座標を保持するだけで、他の処理にはまだ使用しない。
   // tsconfigのnoUnusedLocalsにより未使用変数はエラーになるため、参照したことだけを示しておく。
-  void sphereIntersections
+  void currentUv
 })
 
 /**
