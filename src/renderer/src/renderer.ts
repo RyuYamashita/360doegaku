@@ -116,6 +116,16 @@ const currentUvVector = new THREE.Vector2()
 // 現在のUV座標。交差情報またはUVが取得できない場合はnull（未取得）にする。
 let currentUv: THREE.Vector2 | null = null
 
+// 描画Canvasの基準サイズ（将来変更可能）
+const drawingCanvasSize = {
+  width: 5376,
+  height: 2688
+}
+// 現在のCanvas座標をコピーして保持するためのVector2。currentUvVectorと同様、一度だけ確保し使い回す。
+const currentCanvasPositionVector = new THREE.Vector2()
+// 現在のCanvas座標（Canvas左上を原点とした整数ピクセル座標）。currentUvが取得できない場合はnull（未取得）にする。
+let currentCanvasPosition: THREE.Vector2 | null = null
+
 window.addEventListener('pointermove', (event) => {
   // マウスのピクセル座標を、Three.jsが扱うNDC（画面中心を原点とした-1〜1の正規化デバイス座標）へ変換する。
   pointer.x = (event.clientX / window.innerWidth) * 2 - 1
@@ -136,9 +146,28 @@ window.addEventListener('pointermove', (event) => {
     // 交差情報がない、またはUVが取得できない場合は未取得状態に戻す。
     currentUv = null
   }
-  // 今回はUV座標を保持するだけで、他の処理にはまだ使用しない。
+
+  if (currentUv) {
+    // Three.jsのSphereGeometryは、球体の上側(UVのV=1)から下側(V=0)へ向かってVが小さくなる向きでUVを生成する
+    // （three.jsのSphereGeometry実装で確認済み）。
+    // 一方Canvas座標は左上(Y=0)を原点として下方向にYが増加するため、V値をそのまま使うと上下が逆になる。
+    // そのため(1 - V)でY座標を算出し、球体の上＝Canvas上端、球体の下＝Canvas下端となるよう向きを合わせる。
+    const canvasX = Math.floor(currentUv.x * drawingCanvasSize.width)
+    const canvasY = Math.floor((1 - currentUv.y) * drawingCanvasSize.height)
+
+    // UV値が境界の0または1になった場合でもCanvasの有効範囲(0～サイズ-1)を超えないよう制限する。
+    currentCanvasPositionVector.set(
+      THREE.MathUtils.clamp(canvasX, 0, drawingCanvasSize.width - 1),
+      THREE.MathUtils.clamp(canvasY, 0, drawingCanvasSize.height - 1)
+    )
+    currentCanvasPosition = currentCanvasPositionVector
+  } else {
+    // currentUvが未取得の場合は、Canvas座標も未取得状態に戻す。
+    currentCanvasPosition = null
+  }
+  // 今回はCanvas座標を保持するだけで、他の処理にはまだ使用しない。
   // tsconfigのnoUnusedLocalsにより未使用変数はエラーになるため、参照したことだけを示しておく。
-  void currentUv
+  void currentCanvasPosition
 })
 
 /**
