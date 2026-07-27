@@ -121,6 +121,11 @@ const drawingCanvasSize = {
   width: 5376,
   height: 2688
 }
+// 将来のTexture生成・描画処理の元になる描画用Canvas。画面には表示せず、アプリ初期化時に1回だけ生成して使い回す。
+const drawingCanvas = document.createElement('canvas')
+// 内部の描画サイズはdrawingCanvasSizeに合わせる（CSS表示サイズではなくCanvas自体のwidth/height属性）。
+drawingCanvas.width = drawingCanvasSize.width
+drawingCanvas.height = drawingCanvasSize.height
 // 現在のCanvas座標をコピーして保持するためのVector2。currentUvVectorと同様、一度だけ確保し使い回す。
 const currentCanvasPositionVector = new THREE.Vector2()
 // 現在のCanvas座標（Canvas左上を原点とした整数ピクセル座標）。currentUvが取得できない場合はnull（未取得）にする。

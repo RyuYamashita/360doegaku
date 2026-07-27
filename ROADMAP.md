@@ -172,9 +172,9 @@ WebGPU
 以下は現時点では実装しないが、今後のフェーズで検討する設計改善項目。
 
 - Pointer関連（pointer、Raycaster、Intersection、currentUvなど）を専用モジュールへ分離する。
-- currentUv は再利用する共有 Vector2 を参照しているため、値を保持したい場合は利用側で copy() または clone() を行う。
-- currentUv を実際に使用するフェーズになったら、暫定対応である `void currentUv` を削除する。
+- `currentUv`および`currentCanvasPosition`は再利用する共有`Vector2`を参照しているため、値を保持したい場合は利用側で`copy()`または`clone()`を行う。
 - ブラシ描画などで pointermove の負荷が問題になった場合は、Raycast 処理を animate() 側へ移すことを検討する。
+- アプリの配布前に、Electronのrendererへ制限的なContent Security Policy（CSP）を設定する。開発環境で確認された `Insecure Content-Security-Policy` 警告を非表示にするだけの対応は行わず、electron-viteの開発環境・ビルド環境・パッケージ版で既存機能への影響を確認する。具体的な変更対象とCSPの内容は実装時に調査して確定する。
 
 ## 設計レビュー記録
 
