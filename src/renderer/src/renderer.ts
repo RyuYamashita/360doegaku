@@ -126,6 +126,19 @@ const drawingCanvas = document.createElement('canvas')
 // 内部の描画サイズはdrawingCanvasSizeに合わせる（CSS表示サイズではなくCanvas自体のwidth/height属性）。
 drawingCanvas.width = drawingCanvasSize.width
 drawingCanvas.height = drawingCanvasSize.height
+// drawingCanvasを描画Textureとして保持する（アプリ初期化時に1回だけ生成）。
+const drawingTexture = new THREE.CanvasTexture(drawingCanvas)
+// Canvasの色は色データ（sRGB）として扱う。デフォルトのNoColorSpaceのままだと
+// SRGBColorSpaceで出力するWebGLRendererと色が整合しないため明示する。
+drawingTexture.colorSpace = THREE.SRGBColorSpace
+// Canvas上端(Y=0)と球体上側(UVのV=1)の対応を、フェーズ2-7の座標変換前提のまま維持するため明示する。
+drawingTexture.flipY = true
+// 5376×2688と大きく、将来ブラシ描画で頻繁に更新するため、更新のたびにミップマップを
+// 再生成するコストを避ける目的でミップマップを無効化する。
+drawingTexture.generateMipmaps = false
+// generateMipmaps: falseと整合させるため、ミップマップに依存しないフィルターへ変更する。
+drawingTexture.minFilter = THREE.LinearFilter
+drawingTexture.magFilter = THREE.LinearFilter
 // 現在のCanvas座標をコピーして保持するためのVector2。currentUvVectorと同様、一度だけ確保し使い回す。
 const currentCanvasPositionVector = new THREE.Vector2()
 // 現在のCanvas座標（Canvas左上を原点とした整数ピクセル座標）。currentUvが取得できない場合はnull（未取得）にする。
