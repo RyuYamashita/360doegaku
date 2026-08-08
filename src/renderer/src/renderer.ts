@@ -126,6 +126,18 @@ const drawingCanvas = document.createElement('canvas')
 // 内部の描画サイズはdrawingCanvasSizeに合わせる（CSS表示サイズではなくCanvas自体のwidth/height属性）。
 drawingCanvas.width = drawingCanvasSize.width
 drawingCanvas.height = drawingCanvasSize.height
+// 白色初期化のために2Dコンテキストを1回だけ取得する。
+const drawingContext = drawingCanvas.getContext('2d')
+
+if (!drawingContext) {
+  // 2Dコンテキストが取得できない場合、以降のCanvas初期化・Texture化を継続できないためエラーにする。
+  throw new Error('描画Canvasの2Dコンテキストを取得できませんでした')
+}
+
+// 360度描画空間の初期状態を白紙にするため、ブラシ描画とは別に全面を白で塗りつぶしておく。
+drawingContext.fillStyle = '#ffffff'
+drawingContext.fillRect(0, 0, drawingCanvasSize.width, drawingCanvasSize.height)
+
 // drawingCanvasを描画Textureとして保持する（アプリ初期化時に1回だけ生成）。
 const drawingTexture = new THREE.CanvasTexture(drawingCanvas)
 // Canvasの色は色データ（sRGB）として扱う。デフォルトのNoColorSpaceのままだと
@@ -139,6 +151,8 @@ drawingTexture.generateMipmaps = false
 // generateMipmaps: falseと整合させるため、ミップマップに依存しないフィルターへ変更する。
 drawingTexture.minFilter = THREE.LinearFilter
 drawingTexture.magFilter = THREE.LinearFilter
+// 白紙で初期化済みのdrawingTextureを球体の描画面として使用する。
+sphere.material.map = drawingTexture
 // 現在のCanvas座標をコピーして保持するためのVector2。currentUvVectorと同様、一度だけ確保し使い回す。
 const currentCanvasPositionVector = new THREE.Vector2()
 // 現在のCanvas座標（Canvas左上を原点とした整数ピクセル座標）。currentUvが取得できない場合はnull（未取得）にする。
