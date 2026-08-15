@@ -59,6 +59,12 @@ function createOrbitControls(
   // 右ドラッグによるパン移動は禁止する。
   controls.enablePan = false
 
+  // 左ボタンはブラシ操作に使うため、OrbitControls側の操作を割り当てない。
+  // pointerdownの伝播を止めて構造的に競合を防ぐが、念のための防御的な設定として残す。
+  controls.mouseButtons.LEFT = null
+  // 右ドラッグで視点回転できるようにする（左ボタンをブラシに使うための代替割り当て）。
+  controls.mouseButtons.RIGHT = THREE.MOUSE.ROTATE
+
   // ドラッグを離した後、視点の動きが少しだけ滑らかに収まるようにする。
   // 値を明示することで、Three.js更新による既定値変更の影響を受けないようにする。
   controls.enableDamping = true
@@ -118,8 +124,8 @@ let currentUv: THREE.Vector2 | null = null
 
 // 描画Canvasの基準サイズ（将来変更可能）
 const drawingCanvasSize = {
-  width: 5376,
-  height: 2688
+  width: 1920,
+  height: 960
 }
 // 将来のTexture生成・描画処理の元になる描画用Canvas。画面には表示せず、アプリ初期化時に1回だけ生成して使い回す。
 const drawingCanvas = document.createElement('canvas')
@@ -127,16 +133,30 @@ const drawingCanvas = document.createElement('canvas')
 drawingCanvas.width = drawingCanvasSize.width
 drawingCanvas.height = drawingCanvasSize.height
 // 白色初期化のために2Dコンテキストを1回だけ取得する。
-const drawingContext = drawingCanvas.getContext('2d')
+const maybeDrawingContext = drawingCanvas.getContext('2d')
 
-if (!drawingContext) {
+if (!maybeDrawingContext) {
   // 2Dコンテキストが取得できない場合、以降のCanvas初期化・Texture化を継続できないためエラーにする。
   throw new Error('描画Canvasの2Dコンテキストを取得できませんでした')
 }
 
+// ここで新しい変数へ代入し直すことで、以降のネストした関数（drawBrushDot等）の中でも
+// TypeScript上nullを含まない型として扱えるようにする（クロージャへは絞り込みが伝播しないため）。
+const drawingContext = maybeDrawingContext
+
 // 360度描画空間の初期状態を白紙にするため、ブラシ描画とは別に全面を白で塗りつぶしておく。
 drawingContext.fillStyle = '#ffffff'
 drawingContext.fillRect(0, 0, drawingCanvasSize.width, drawingCanvasSize.height)
+
+// 最初のブラシの固定設定（色・線幅のみ。将来のブラシ設定構造は今回先取りしない）。
+const brushColor = '#000000'
+const brushWidth = 20
+// 白色初期化の後、ブラシ用のスタイルを1回だけ設定する（描画のたびに設定し直さない）。
+drawingContext.fillStyle = brushColor
+drawingContext.strokeStyle = brushColor
+drawingContext.lineWidth = brushWidth
+drawingContext.lineCap = 'round'
+drawingContext.lineJoin = 'round'
 
 // drawingCanvasを描画Textureとして保持する（アプリ初期化時に1回だけ生成）。
 const drawingTexture = new THREE.CanvasTexture(drawingCanvas)
@@ -145,8 +165,8 @@ const drawingTexture = new THREE.CanvasTexture(drawingCanvas)
 drawingTexture.colorSpace = THREE.SRGBColorSpace
 // Canvas上端(Y=0)と球体上側(UVのV=1)の対応を、フェーズ2-7の座標変換前提のまま維持するため明示する。
 drawingTexture.flipY = true
-// 5376×2688と大きく、将来ブラシ描画で頻繁に更新するため、更新のたびにミップマップを
-// 再生成するコストを避ける目的でミップマップを無効化する。
+// 将来ブラシ描画で頻繁に更新するため、更新のたびにミップマップを
+// 再生成するコストを避ける。
 drawingTexture.generateMipmaps = false
 // generateMipmaps: falseと整合させるため、ミップマップに依存しないフィルターへ変更する。
 drawingTexture.minFilter = THREE.LinearFilter
@@ -158,7 +178,13 @@ const currentCanvasPositionVector = new THREE.Vector2()
 // 現在のCanvas座標（Canvas左上を原点とした整数ピクセル座標）。currentUvが取得できない場合はnull（未取得）にする。
 let currentCanvasPosition: THREE.Vector2 | null = null
 
-window.addEventListener('pointermove', (event) => {
+/**
+ * ポインター座標から球体とのRaycastを行い、currentUv・currentCanvasPositionを更新する。
+ * pointermove・ブラシのpointerdownの両方から呼び出せるよう、共通処理として独立させている。
+ *
+ * @param event NDC座標へ変換する対象のPointerEvent
+ */
+function updatePointerRaycast(event: PointerEvent): void {
   // マウスのピクセル座標を、Three.jsが扱うNDC（画面中心を原点とした-1〜1の正規化デバイス座標）へ変換する。
   pointer.x = (event.clientX / window.innerWidth) * 2 - 1
   pointer.y = -(event.clientY / window.innerHeight) * 2 + 1
@@ -197,9 +223,170 @@ window.addEventListener('pointermove', (event) => {
     // currentUvが未取得の場合は、Canvas座標も未取得状態に戻す。
     currentCanvasPosition = null
   }
-  // 今回はCanvas座標を保持するだけで、他の処理にはまだ使用しない。
-  // tsconfigのnoUnusedLocalsにより未使用変数はエラーになるため、参照したことだけを示しておく。
-  void currentCanvasPosition
+}
+
+// 現在ブラシ描画中のpointerId。描画中でない場合はnull。この変数がnullでないことを描画中状態として扱う。
+let activePointerId: number | null = null
+// 前回描画したCanvas座標をコピーして保持するためのVector2。使い回し用に一度だけ確保する。
+const lastDrawPositionVector = new THREE.Vector2()
+// 前回描画したCanvas座標。ストローク開始直後や中断後は未取得としてnullにする。
+let lastDrawPosition: THREE.Vector2 | null = null
+
+/**
+ * 指定したCanvas座標へ、ブラシ色で塗りつぶした円を描く。
+ * 最初の点・前回座標がない場合の再開点・UV継ぎ目をまたいだ再開点の3箇所から共通で使う。
+ *
+ * @param x Canvas上のX座標
+ * @param y Canvas上のY座標
+ */
+function drawBrushDot(x: number, y: number): void {
+  drawingContext.beginPath()
+  drawingContext.arc(x, y, brushWidth / 2, 0, Math.PI * 2)
+  drawingContext.fill()
+}
+
+// ブラシの描画状態（アクティブなpointerId・前回座標）をリセットする。
+function resetDrawingState(): void {
+  activePointerId = null
+  lastDrawPosition = null
+}
+
+/**
+ * ブラシのストロークを終了する。状態を先にリセットしてから、
+ * Pointer Captureを保持している場合だけ解放する（lostpointercaptureの再入時も安全なように）。
+ *
+ * @param pointerId 終了させるポインターのID
+ */
+function finishDrawing(pointerId: number): void {
+  resetDrawingState()
+  if (renderer.domElement.hasPointerCapture(pointerId)) {
+    renderer.domElement.releasePointerCapture(pointerId)
+  }
+}
+
+/**
+ * 左ボタンのpointerdownでブラシストロークを開始する。
+ * captureフェーズで登録し、左ボタンの場合だけOrbitControls側のpointerdownより先に
+ * event.stopImmediatePropagation()することで、視点回転との競合を構造的に防ぐ。
+ *
+ * @param event pointerdownイベント
+ */
+function handleBrushPointerDown(event: PointerEvent): void {
+  if (!event.isPrimary) return
+  if (event.button !== 0) return
+
+  // 左ボタンの場合のみ、OrbitControls側のpointerdownハンドラへ到達させない。
+  event.stopImmediatePropagation()
+  event.preventDefault()
+
+  updatePointerRaycast(event)
+
+  // 球体と交差していない位置でのpointerdownでは、描画を開始しない。
+  if (!currentCanvasPosition) return
+
+  activePointerId = event.pointerId
+  renderer.domElement.setPointerCapture(event.pointerId)
+
+  drawBrushDot(currentCanvasPosition.x, currentCanvasPosition.y)
+  lastDrawPositionVector.copy(currentCanvasPosition)
+  lastDrawPosition = lastDrawPositionVector
+  drawingTexture.needsUpdate = true
+}
+
+/**
+ * ブラシストローク中のpointercancelを処理する。
+ * OrbitControlsはpointercancelをdomElementへ常設登録しているため、
+ * captureフェーズでアクティブなポインターの場合だけ先に遮断し、終了処理を行う。
+ *
+ * @param event pointercancelイベント
+ */
+function handleBrushPointerCancel(event: PointerEvent): void {
+  if (activePointerId === null || event.pointerId !== activePointerId) return
+  event.stopImmediatePropagation()
+  finishDrawing(event.pointerId)
+}
+
+renderer.domElement.addEventListener('pointerdown', handleBrushPointerDown, { capture: true })
+renderer.domElement.addEventListener('pointercancel', handleBrushPointerCancel, { capture: true })
+
+renderer.domElement.addEventListener('pointerup', (event) => {
+  // OrbitControlsは左ボタンのpointerIdを追跡していないため、伝播を遮断する必要はない。
+  if (activePointerId === null || event.pointerId !== activePointerId) return
+  finishDrawing(event.pointerId)
+})
+
+renderer.domElement.addEventListener('lostpointercapture', (event) => {
+  if (activePointerId === null || event.pointerId !== activePointerId) return
+  // Pointer Captureは既に失われているため、releasePointerCapture()は呼ばない。
+  resetDrawingState()
+})
+
+window.addEventListener('blur', () => {
+  if (activePointerId !== null) {
+    finishDrawing(activePointerId)
+  }
+})
+
+window.addEventListener('pointermove', (event) => {
+  updatePointerRaycast(event)
+
+  if (activePointerId === null || event.pointerId !== activePointerId) return
+
+  // Rendererがウィンドウ全体を使用しているため、画面内かどうかをウィンドウサイズで判定する。
+  const inBounds =
+    event.clientX >= 0 &&
+    event.clientX <= window.innerWidth &&
+    event.clientY >= 0 &&
+    event.clientY <= window.innerHeight
+
+  if (!currentCanvasPosition || !inBounds) {
+    // 交差なし、または描画領域外では線をつながず、次に有効な位置から新しく描き始める。
+    lastDrawPosition = null
+    return
+  }
+
+  if (lastDrawPosition) {
+    // そのままlineTo()で接続すると、UVの左右端をまたぐ際にCanvas全体を横断する不正な線になる。
+    // そのため、X座標差の符号から継ぎ目をまたいだ方向を判定し、Canvas幅だけずらした2本の線分として
+    // 左右端へ描画する。Canvas範囲外への描画は暗黙的にクリッピングされるため、それぞれの線分は
+    // 実際にCanvas内に収まる側だけが結果的に表示される。
+    const deltaX = currentCanvasPosition.x - lastDrawPosition.x
+    if (Math.abs(deltaX) > drawingCanvasSize.width / 2) {
+      drawingContext.beginPath()
+      if (deltaX < 0) {
+        // 右端から左端へまたいだ場合。
+        drawingContext.moveTo(lastDrawPosition.x, lastDrawPosition.y)
+        drawingContext.lineTo(
+          currentCanvasPosition.x + drawingCanvasSize.width,
+          currentCanvasPosition.y
+        )
+        drawingContext.moveTo(lastDrawPosition.x - drawingCanvasSize.width, lastDrawPosition.y)
+        drawingContext.lineTo(currentCanvasPosition.x, currentCanvasPosition.y)
+      } else {
+        // 左端から右端へまたいだ場合。
+        drawingContext.moveTo(lastDrawPosition.x, lastDrawPosition.y)
+        drawingContext.lineTo(
+          currentCanvasPosition.x - drawingCanvasSize.width,
+          currentCanvasPosition.y
+        )
+        drawingContext.moveTo(lastDrawPosition.x + drawingCanvasSize.width, lastDrawPosition.y)
+        drawingContext.lineTo(currentCanvasPosition.x, currentCanvasPosition.y)
+      }
+      drawingContext.stroke()
+    } else {
+      drawingContext.beginPath()
+      drawingContext.moveTo(lastDrawPosition.x, lastDrawPosition.y)
+      drawingContext.lineTo(currentCanvasPosition.x, currentCanvasPosition.y)
+      drawingContext.stroke()
+    }
+  } else {
+    // 前回座標がない（ストローク再開直後）場合は、まず点を描いてつなぎ先を作る。
+    drawBrushDot(currentCanvasPosition.x, currentCanvasPosition.y)
+  }
+
+  lastDrawPositionVector.copy(currentCanvasPosition)
+  lastDrawPosition = lastDrawPositionVector
+  drawingTexture.needsUpdate = true
 })
 
 /**
