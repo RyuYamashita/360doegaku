@@ -132,6 +132,100 @@ const drawingCanvas = document.createElement('canvas')
 // 内部の描画サイズはdrawingCanvasSizeに合わせる（CSS表示サイズではなくCanvas自体のwidth/height属性）。
 drawingCanvas.width = drawingCanvasSize.width
 drawingCanvas.height = drawingCanvasSize.height
+
+const jpegQuality = 0.92
+let isSavingPanorama = false
+
+/** Canvasの非同期APIをPromise化し、JPEG生成失敗を保存処理へ明示的に伝える。 */
+function createDrawingJpegBlob(): Promise<Blob> {
+  return new Promise((resolve, reject) => {
+    // 描画中のCanvasを変更すると表示中のTextureにも影響するため、保存時だけ使うCanvasへ結果を転写する。
+    const exportCanvas = document.createElement('canvas')
+    exportCanvas.width = drawingCanvas.width
+    exportCanvas.height = drawingCanvas.height
+
+    const exportContext = exportCanvas.getContext('2d')
+    if (!exportContext) {
+      reject(new Error('保存用Canvasの2Dコンテキストを取得できませんでした'))
+      return
+    }
+
+    const horizontalShift = exportCanvas.width / 4
+    if (!Number.isInteger(horizontalShift)) {
+      reject(new Error('保存用Canvasの循環移動量を整数で計算できませんでした'))
+      return
+    }
+
+    // 等倍の整数座標で描画し、左右端の回り込み部分に補間によるぼけが生じないようにする。
+    exportContext.imageSmoothingEnabled = false
+    exportContext.save()
+    // 左右反転した画像を右へ幅の1/4だけ移動し、右端を超える部分はCanvasの外側で切り取る。
+    exportContext.setTransform(-1, 0, 0, 1, exportCanvas.width + horizontalShift, 0)
+    exportContext.drawImage(drawingCanvas, 0, 0)
+    // 右端からはみ出した部分を左端へ描き、360度画像として途切れず循環させる。
+    exportContext.setTransform(-1, 0, 0, 1, horizontalShift, 0)
+    exportContext.drawImage(drawingCanvas, 0, 0)
+    exportContext.restore()
+
+    exportCanvas.toBlob(
+      (blob) => {
+        if (blob) {
+          resolve(blob)
+        } else {
+          reject(new Error('描画CanvasからJPEGを生成できませんでした'))
+        }
+      },
+      'image/jpeg',
+      jpegQuality
+    )
+  })
+}
+
+/** 保存処理の完了まで再実行を防ぎ、成功・キャンセル・失敗を区別して扱う。 */
+async function savePanoramaJpeg(): Promise<void> {
+  if (isSavingPanorama) return
+  isSavingPanorama = true
+
+  try {
+    const jpegBlob = await createDrawingJpegBlob()
+    const jpegData = await jpegBlob.arrayBuffer()
+    const result = await window.api.savePanoramaJpeg(jpegData)
+
+    if (result.status === 'failed') console.error(result.message)
+  } catch (error) {
+    console.error('360度JPEGの保存処理を開始できませんでした', error)
+  } finally {
+    isSavingPanorama = false
+  }
+}
+
+/** 将来のテキスト入力を妨げないよう、編集可能な要素では保存ショートカットを処理しない。 */
+function isEditableKeyboardTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false
+
+  const tagName = target.tagName.toLowerCase()
+  return (
+    tagName === 'input' ||
+    tagName === 'textarea' ||
+    tagName === 'select' ||
+    target.isContentEditable
+  )
+}
+
+window.addEventListener('keydown', (event) => {
+  const isMac = navigator.platform.toLowerCase().includes('mac')
+  const platformModifierPressed = isMac
+    ? event.metaKey && !event.ctrlKey
+    : event.ctrlKey && !event.metaKey
+  const isSaveShortcut =
+    event.code === 'KeyS' && event.shiftKey && !event.altKey && platformModifierPressed
+
+  if (!isSaveShortcut || isEditableKeyboardTarget(event.target)) return
+
+  event.preventDefault()
+  if (event.repeat || isSavingPanorama) return
+  void savePanoramaJpeg()
+})
 // 白色初期化のために2Dコンテキストを1回だけ取得する。
 const maybeDrawingContext = drawingCanvas.getContext('2d')
 
